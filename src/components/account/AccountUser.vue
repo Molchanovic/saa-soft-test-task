@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { IUser } from './types'
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 
 import * as zod from 'zod'
 import { useField, useForm } from 'vee-validate'
-import { toTypedSchema } from '@vee-validate/zod'
+import { toFormValidator } from '@vee-validate/zod'
 
 import { UserType } from './types'
 import { Button } from '@/components/ui/button'
@@ -27,32 +27,41 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 
+const isLocalUserType = computed(() => props.modelValue.type === UserType.local)
+const isFormFull = computed(() =>
+  isLocalUserType.value ? !!login.value && !!password.value : !!login.value
+)
+
 const emit = defineEmits(['delete', 'update:modelValue'])
 const props = defineProps<{
   modelValue: IUser
 }>()
 
-const validationSchema = toTypedSchema(
-  zod.object({
-    tags: zod.string().max(50, { message: 'Слишком много символов' }),
-    login: zod
-      .string()
-      .min(1, { message: 'Поле обязательно' })
-      .max(100, { message: 'Слишком много символов' }),
-    password:
-      props.modelValue.type === UserType.local
-        ? zod
-            .string()
-            .min(1, { message: 'Поле обязательно' })
-            .max(100, { message: 'Слишком много символов' })
-        : zod.string(),
-  })
-)
-
-const { handleSubmit, errors, setFieldError } = useForm({
-  validationSchema,
+const strictSchema = zod.object({
+  tags: zod.string().max(50, { message: 'Слишком много символов' }),
+  login: zod
+    .string()
+    .min(1, { message: 'Поле обязательно' })
+    .max(100, { message: 'Слишком много символов' }),
+  password: zod
+    .string()
+    .min(1, { message: 'Поле обязательно' })
+    .max(100, { message: 'Слишком много символов' }),
+})
+const relaxedSchema = zod.object({
+  tags: zod.string().max(50, { message: 'Слишком много символов' }),
+  login: zod
+    .string()
+    .min(1, { message: 'Поле обязательно' })
+    .max(100, { message: 'Слишком много символов' }),
 })
 
+const currentSchema = ref(
+  toFormValidator(isLocalUserType.value ? strictSchema : relaxedSchema)
+)
+const { handleSubmit, errors, resetForm } = useForm({
+  validationSchema: currentSchema,
+})
 const { value: login } = useField('login', null, {
   initialValue: props.modelValue.login,
 })
@@ -68,13 +77,12 @@ const changeUserType = (value: string) => {
   user.type = value
   login.value = ''
   password.value = ''
-  setFieldError('login', undefined)
-  setFieldError('password', undefined)
 
   emit('update:modelValue', user)
 }
 
 const onSubmit = handleSubmit(() => {
+  if (!isFormFull.value) return
   const user = JSON.parse(JSON.stringify(props.modelValue))
   user.tags = tags.value.split(';').map((item) => {
     return { text: item }
@@ -84,9 +92,26 @@ const onSubmit = handleSubmit(() => {
 
   emit('update:modelValue', user)
 })
+
+watch(
+  () => props.modelValue.type,
+  (newValue) => {
+    currentSchema.value = toFormValidator(
+      newValue === UserType.local ? strictSchema : relaxedSchema
+    )
+
+    resetForm({
+      values: true,
+      validationSchema: toFormValidator(
+        newValue === UserType.local ? strictSchema : relaxedSchema
+      ),
+    })
+  }
+)
 </script>
 
 <template>
+  <!-- {{ errors }} -->
   <form
     @change="onSubmit"
     class="user-item grid grid-cols-[1fr_140px_1fr_1fr_40px] gap-4 mb-2"

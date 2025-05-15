@@ -79,7 +79,6 @@ export const useUserStore = defineStore('userStore', {
         type: 'ldap',
         tags: [],
       },)
-      this.saveUsersForLocalStorage()
     },
   },
 })
